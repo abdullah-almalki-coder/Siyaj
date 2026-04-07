@@ -1,1 +1,86 @@
-firewall_auditor.py
+# firewall_auditor.py
+
+import subprocess
+
+def audit_firewall():
+    """
+    تقوم هذه الدالة بفحص حالة الجدار الناري والمنافذ المفتوحة
+    وترجع النتائج على شكل Dictionary
+    """
+
+    result = {
+        "firewall_status": None,
+        "open_ports": [],
+        "error": None
+    }
+
+    try:
+        # 🔹 فحص حالة الجدار الناري (UFW)
+        ufw_cmd = ["ufw", "status"]
+
+        ufw_output = subprocess.check_output(
+            ufw_cmd,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+
+        if "Status: active" in ufw_output:
+            result["firewall_status"] = "active"
+        elif "Status: inactive" in ufw_output:
+            result["firewall_status"] = "inactive"
+        else:
+            result["firewall_status"] = "unknown"
+
+    except FileNotFoundError:
+        # إذا UFW غير موجود
+        result["firewall_status"] = "ufw_not_installed"
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    try:
+        # 🔹 فحص المنافذ المفتوحة باستخدام ss
+        ports_cmd = ["ss", "-tuln"]
+
+        ports_output = subprocess.check_output(
+            ports_cmd,
+            stderr=subprocess.STDOUT,
+            text=True
+        )
+
+        lines = ports_output.splitlines()
+
+        for line in lines[1:]:  # تجاهل أول سطر
+            parts = line.split()
+
+            if len(parts) < 5:
+                continue
+
+            address = parts[4]
+
+            # استخراج رقم البورت
+            if ":" in address:
+                port = address.split(":")[-1]
+
+                if port.isdigit():
+                    result["open_ports"].append(port)
+
+        # إزالة التكرار
+        result["open_ports"] = list(set(result["open_ports"]))
+
+    except FileNotFoundError:
+        return {
+            "error": "أمر ss غير موجود. تأكد من تثبيته."
+        }
+
+    except PermissionError:
+        return {
+            "error": "Permission denied. شغل الأداة باستخدام sudo."
+        }
+
+    except Exception as e:
+        return {
+            "error": f"Unexpected error: {str(e)}"
+        }
+
+    return result
