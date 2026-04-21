@@ -138,7 +138,7 @@ def print_final_summary(all_findings, final_score):
 
 if __name__ == "__main__":
     print("="*60)
-    print("  🛡️  SecureConfig Auditor v1.0")
+    print("  🛡️  Siyaj")
     print("  نظام تدقيق أمني لخوادم Linux")
     print("="*60)
 
