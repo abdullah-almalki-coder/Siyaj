@@ -30,7 +30,7 @@ def parse_arguments():
     parser.add_argument(
         '--version',
         action='version',
-        version='SecureConfig Auditor v1.0'
+        version='Siyaj'
     )
     
     return parser.parse_args()
