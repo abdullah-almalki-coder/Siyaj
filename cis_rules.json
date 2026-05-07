@@ -1,0 +1,115 @@
+{
+  "ssh": [
+    {
+      "id": "CIS-5.2.1",
+      "setting": "Protocol",
+      "expected": "2",
+      "severity": "critical",
+      "description": "إصدار بروتوكول SSH",
+      "recommendation": "تأكد أن الملف يحتوي على: Protocol 2"
+    },
+    {
+      "id": "CIS-5.2.2",
+      "setting": "PermitRootLogin",
+      "expected": "no",
+      "severity": "critical",
+      "description": "السماح بتسجيل دخول Root مباشرة",
+      "recommendation": "غيّر الإعداد إلى: PermitRootLogin no"
+    },
+    {
+      "id": "CIS-5.2.3",
+      "setting": "PasswordAuthentication",
+      "expected": "no",
+      "severity": "high",
+      "description": "المصادقة بكلمة المرور",
+      "recommendation": "غيّر الإعداد إلى: PasswordAuthentication no واستخدم مفاتيح SSH"
+    },
+    {
+      "id": "CIS-5.2.4",
+      "setting": "PermitEmptyPasswords",
+      "expected": "no",
+      "severity": "critical",
+      "description": "السماح بكلمات مرور فارغة",
+      "recommendation": "غيّر الإعداد إلى: PermitEmptyPasswords no"
+    },
+    {
+      "id": "CIS-5.2.5",
+      "setting": "X11Forwarding",
+      "expected": "no",
+      "severity": "medium",
+      "description": "تمرير واجهة X11 الرسومية",
+      "recommendation": "غيّر الإعداد إلى: X11Forwarding no"
+    },
+    {
+      "id": "CIS-5.2.6",
+      "setting": "MaxAuthTries",
+      "expected": "4",
+      "operator": "lte",
+      "severity": "high",
+      "description": "الحد الأقصى لمحاولات تسجيل الدخول",
+      "recommendation": "غيّر الإعداد إلى: MaxAuthTries 4 أو أقل"
+    },
+    {
+      "id": "CIS-5.2.7",
+      "setting": "LoginGraceTime",
+      "expected": "60",
+      "operator": "lte",
+      "severity": "medium",
+      "description": "وقت انتهاء صلاحية جلسة تسجيل الدخول",
+      "recommendation": "غيّر الإعداد إلى: LoginGraceTime 60 أو أقل"
+    },
+    {
+      "id": "CIS-5.2.8",
+      "setting": "ClientAliveInterval",
+      "expected": "300",
+      "operator": "lte",
+      "severity": "low",
+      "description": "الفاصل الزمني للتحقق من نشاط العميل",
+      "recommendation": "غيّر الإعداد إلى: ClientAliveInterval 300 أو أقل"
+    }
+  ],
+  "firewall": {
+    "dangerous_ports": [
+      {"port": 23,   "name": "Telnet",  "severity": "critical", "reason": "بروتوكول غير مشفر، يُرسل البيانات نصاً صريحاً"},
+      {"port": 21,   "name": "FTP",     "severity": "high",     "reason": "بروتوكول قديم وغير آمن، استخدم SFTP بدلاً منه"},
+      {"port": 3389, "name": "RDP",     "severity": "high",     "reason": "هدف رئيسي للهجمات، لا تفتحه للإنترنت"},
+      {"port": 445,  "name": "SMB",     "severity": "high",     "reason": "بروتوكول مشاركة ملفات Windows، عرضة لثغرات خطيرة"},
+      {"port": 135,  "name": "RPC",     "severity": "medium",   "reason": "بروتوكول RPC، غالباً لا يحتاجه الخادم"},
+      {"port": 512,  "name": "rexec",   "severity": "critical", "reason": "بروتوكول قديم جداً وغير آمن"},
+      {"port": 513,  "name": "rlogin",  "severity": "critical", "reason": "بروتوكول قديم جداً وغير آمن"},
+      {"port": 514,  "name": "rsh",     "severity": "critical", "reason": "بروتوكول قديم جداً وغير آمن"}
+    ]
+  },
+  "users": {
+    "checks": [
+      {
+        "id": "CIS-6.2.1",
+        "name": "root_locked",
+        "description": "حساب Root مقفل",
+        "severity": "high",
+        "recommendation": "أقفل حساب Root: sudo passwd -l root"
+      },
+      {
+        "id": "CIS-6.2.2",
+        "name": "uid_zero",
+        "description": "حسابات بـ UID=0 غير Root",
+        "severity": "critical",
+        "recommendation": "احذف أو عدّل هذه الحسابات فوراً، فقط Root يجب أن يملك UID=0"
+      },
+      {
+        "id": "CIS-6.2.3",
+        "name": "empty_passwords",
+        "description": "حسابات بكلمات مرور فارغة",
+        "severity": "critical",
+        "recommendation": "اضبط كلمة مرور لكل حساب: sudo passwd <اسم_المستخدم>"
+      },
+      {
+        "id": "CIS-6.2.4",
+        "name": "sudo_nopasswd",
+        "description": "مستخدمون بصلاحية Sudo بدون كلمة مرور",
+        "severity": "high",
+        "recommendation": "أزل NOPASSWD من ملف sudoers لهذه الحسابات"
+      }
+    ]
+  }
+}
