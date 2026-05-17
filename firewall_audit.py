@@ -1,115 +1,79 @@
-import json
-import os
+import re
 import subprocess
 
-CIS_RULES = os.path.join(os.path.dirname(__file__), "cis_rules.json")
 
-
-def get_ufw_status():
-    """فحص حالة UFW"""
-    try:
-        result = subprocess.run(
-            ["ufw", "status", "verbose"],
-            capture_output=True, text=True
-        )
-        output = result.stdout.lower()
-        active = "status: active" in output
-        default_deny = "default: deny" in output or "default: reject" in output
-        return active, default_deny, result.stdout
-    except FileNotFoundError:
-        return False, False, "UFW غير مثبت"
-
-
-def get_open_ports():
-    """الحصول على المنافذ المفتوحة"""
-    ports = []
-    try:
-        result = subprocess.run(
-            ["ss", "-tuln"],
-            capture_output=True, text=True
-        )
-        for line in result.stdout.splitlines()[1:]:
-            parts = line.split()
-            if len(parts) >= 5:
-                addr = parts[4]
-                port_str = addr.rsplit(":", 1)[-1]
-                try:
-                    ports.append(int(port_str))
-                except ValueError:
-                    pass
-    except Exception:
-        pass
-    return list(set(ports))
-
-
-def check_dangerous_ports(open_ports, dangerous_ports):
-    """مقارنة المنافذ المفتوحة مع قائمة المنافذ الخطيرة"""
-    found = []
-    for dp in dangerous_ports:
-        if dp["port"] in open_ports:
-            found.append(dp)
-    return found
-
-
-def calculate_score(ufw_active, default_deny, dangerous_found):
-    """حساب درجة الجدار الناري"""
-    score = 100
-
-    if not ufw_active:
-        score -= 50
-    if not default_deny:
-        score -= 20
-
-    severity_penalty = {"critical": 15, "high": 10, "medium": 5}
-    for port in dangerous_found:
-        score -= severity_penalty.get(port["severity"], 5)
-
-    return max(0, score)
-
-
-def run():
-    """تشغيل فحص الجدار الناري الكامل"""
-    with open(CIS_RULES) as f:
-        dangerous_ports = json.load(f)["firewall"]["dangerous_ports"]
-
-    ufw_active, default_deny, ufw_output = get_ufw_status()
-    open_ports = get_open_ports()
-    dangerous_found = check_dangerous_ports(open_ports, dangerous_ports)
-    score = calculate_score(ufw_active, default_deny, dangerous_found)
-
+def audit_firewall(rules):
+    fw_rules = rules.get("firewall", {})
     results = []
 
+    # UFW active
+    weight = fw_rules.get("ufw_active", {}).get("weight", 15)
+    active = _ufw_active()
     results.append({
-        "check": "حالة UFW",
-        "status": "آمن" if ufw_active else "خطر",
-        "detail": "الجدار الناري نشط" if ufw_active else "الجدار الناري غير نشط!",
-        "severity": "critical",
-        "recommendation": None if ufw_active else "شغّل UFW: sudo ufw enable",
+        "check": "ufw_active",
+        "description": fw_rules.get("ufw_active", {}).get("description", ""),
+        "status": "PASS" if active else "FAIL",
+        "detail": "active" if active else "inactive or not installed",
+        "score": weight if active else 0,
+        "max_score": weight,
     })
 
+    # Default incoming deny
+    weight = fw_rules.get("default_incoming_deny", {}).get("weight", 10)
+    deny = _default_deny()
     results.append({
-        "check": "السياسة الافتراضية",
-        "status": "آمن" if default_deny else "خطر",
-        "detail": "الإعداد الافتراضي: رفض الاتصالات الواردة" if default_deny
-                  else "الإعداد الافتراضي يسمح بالاتصالات الواردة!",
-        "severity": "high",
-        "recommendation": None if default_deny
-                          else "اضبط السياسة: sudo ufw default deny incoming",
+        "check": "default_incoming_deny",
+        "description": fw_rules.get("default_incoming_deny", {}).get("description", ""),
+        "status": "PASS" if deny else "FAIL",
+        "detail": "deny" if deny else "not set to deny",
+        "score": weight if deny else 0,
+        "max_score": weight,
     })
 
-    for port in dangerous_found:
-        results.append({
-            "check": f"منفذ خطير: {port['name']} ({port['port']})",
-            "status": "خطر",
-            "detail": port["reason"],
-            "severity": port["severity"],
-            "recommendation": f"أغلق المنفذ: sudo ufw deny {port['port']}",
-        })
+    # Dangerous open ports
+    dp_rule = fw_rules.get("dangerous_ports", {})
+    weight = dp_rule.get("weight", 10)
+    ports = dp_rule.get("ports", [])
+    open_dangerous = _open_dangerous_ports(ports)
 
-    return {
-        "module": "Firewall",
-        "score": score,
-        "results": results,
-        "open_ports": open_ports,
-        "ufw_active": ufw_active,
-    }
+    if open_dangerous:
+        status, detail, earned = "FAIL", f"Open: {', '.join(map(str, open_dangerous))}", 0
+    else:
+        status, detail, earned = "PASS", "No dangerous ports open", weight
+
+    results.append({
+        "check": "dangerous_ports",
+        "description": dp_rule.get("description", ""),
+        "status": status,
+        "detail": detail,
+        "score": earned,
+        "max_score": weight,
+    })
+
+    return results
+
+
+def _run(cmd):
+    try:
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        return r.stdout + r.stderr
+    except Exception:
+        return ""
+
+
+def _ufw_active():
+    out = _run("ufw status")
+    return "Status: active" in out
+
+
+def _default_deny():
+    out = _run("ufw status verbose")
+    lower = out.lower()
+    return "deny (incoming)" in lower or "default: deny" in lower
+
+
+def _open_dangerous_ports(ports):
+    out = _run("ss -tlnp")
+    if not out.strip():
+        out = _run("netstat -tlnp")
+    return [p for p in ports if re.search(rf"[:\s]{p}[\s\t]", out)]
