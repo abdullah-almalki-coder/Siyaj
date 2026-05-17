@@ -1,104 +1,71 @@
-try:
-    from colorama import init, Fore, Style
-    init(autoreset=True)
-    HAS_COLOR = True
-except ImportError:
-    HAS_COLOR = False
+from colorama import init, Fore, Style
 
-    class Fore:
-        RED = GREEN = YELLOW = CYAN = WHITE = MAGENTA = ""
+init(autoreset=True)
 
-    class Style:
-        BRIGHT = RESET_ALL = ""
-
-
-def color(text, clr):
-    if not HAS_COLOR:
-        return text
-    colors = {
-        "green":   Fore.GREEN,
-        "red":     Fore.RED,
-        "yellow":  Fore.YELLOW,
-        "cyan":    Fore.CYAN,
-        "white":   Fore.WHITE,
-        "magenta": Fore.MAGENTA,
-    }
-    return f"{colors.get(clr, '')}{Style.BRIGHT}{text}{Style.RESET_ALL}"
+BANNER = r"""
+  ███████╗██╗██╗   ██╗ █████╗      ██╗
+  ██╔════╝██║╚██╗ ██╔╝██╔══██╗     ██║
+  ███████╗██║ ╚████╔╝ ███████║     ██║
+  ╚════██║██║  ╚██╔╝  ██╔══██║██   ██║
+  ███████║██║   ██║   ██║  ██║╚█████╔╝
+  ╚══════╝╚═╝   ╚═╝   ╚═╝  ╚═╝ ╚════╝
+"""
 
 
-def print_header():
-    print("\n" + color("═" * 55, "cyan"))
-    print(color("   SecureConfig Auditor — نظام تدقيق أمني Linux", "cyan"))
-    print(color("═" * 55, "cyan") + "\n")
+def print_banner():
+    print(Fore.CYAN + Style.BRIGHT + BANNER)
+    print(Fore.CYAN + Style.BRIGHT + "  سياج — SecureConfig Auditor v1.0")
+    print(Fore.WHITE + "  " + "=" * 47 + "\n")
 
 
-def score_bar(score, width=30):
-    filled = int((score / 100) * width)
-    bar = "█" * filled + "░" * (width - filled)
+def print_section(title):
+    print(Fore.CYAN + Style.BRIGHT + f"\n[*] {title}")
+    print(Fore.WHITE + "-" * 52)
+
+
+def print_check(name, status, detail=""):
+    if status == "PASS":
+        tag = Fore.GREEN + Style.BRIGHT + "[PASS]"
+    elif status == "FAIL":
+        tag = Fore.RED + Style.BRIGHT + "[FAIL]"
+    else:
+        tag = Fore.YELLOW + Style.BRIGHT + "[WARN]"
+    print(f"  {tag} {Fore.WHITE}{name}: {Fore.YELLOW}{detail}")
+
+
+def print_score(domain, earned, maximum):
+    pct = (earned / maximum * 100) if maximum > 0 else 0.0
+    color = _score_color(pct)
+    print(f"  {color}{domain}: {earned:.1f}/{maximum} ({pct:.1f}%)")
+
+
+def print_final_score(score):
+    color = _score_color(score)
+    label = score_label(score)
+    print(Fore.WHITE + Style.BRIGHT + "\n" + "=" * 52)
+    print(Fore.WHITE + Style.BRIGHT + "  FINAL SECURITY SCORE")
+    print(Fore.WHITE + Style.BRIGHT + "=" * 52)
+    print(f"  {color}{Style.BRIGHT}  {score:.1f} / 100  —  {label}")
+    print(Fore.WHITE + Style.BRIGHT + "=" * 52 + "\n")
+
+
+def score_label(score):
     if score >= 80:
-        return color(f"[{bar}]", "green")
+        return "Good"
     elif score >= 60:
-        return color(f"[{bar}]", "yellow")
+        return "Needs Improvement"
+    elif score >= 40:
+        return "Danger"
     else:
-        return color(f"[{bar}]", "red")
+        return "Critical"
 
 
-def status_badge(status):
-    badges = {
-        "آمن":    color("✔ آمن", "green"),
-        "خطر":    color("✘ خطر", "red"),
-        "مفقود":  color("? مفقود", "yellow"),
-        "تحذير":  color("⚠ تحذير", "yellow"),
-    }
-    return badges.get(status, status)
-
-
-def print_module_results(module_result):
-    name = module_result["module"]
-    score = module_result["score"]
-    results = module_result["results"]
-
-    print(color(f"\n── وحدة {name} ──────────────────────────────", "magenta"))
-    print(f"  الدرجة: {score}/100  {score_bar(score)}")
-    print()
-
-    for r in results:
-        status = r.get("status", "")
-        check = r.get("check") or r.get("setting") or ""
-        detail = r.get("detail") or r.get("description") or ""
-        recommendation = r.get("recommendation")
-
-        print(f"  {status_badge(status)}  {check}")
-        if detail:
-            print(f"         {color(detail, 'white')}")
-        if recommendation:
-            print(f"         {color('→ ' + recommendation, 'yellow')}")
-        print()
-
-
-def print_summary(summary):
-    score = summary["final_score"]
-    classification = summary["classification"]
-    clr = summary["color"]
-
-    print(color("═" * 55, "cyan"))
-    print(color(f"  النتيجة النهائية: {score}/100 — {classification}", clr))
-    print(f"  {score_bar(score, width=40)}")
-    print()
-
-    print("  الأوزان:")
-    for m in summary["modules"]:
-        bar = score_bar(m["score"], width=20)
-        print(f"    {m['name']:10} {m['score']:3}/100  {bar}  ({m['weight']}%)")
-
-    print()
-    if summary["top_issues"]:
-        print(color("  ⚠ أهم المشاكل التي تحتاج معالجة:", "red"))
-        for i, issue in enumerate(summary["top_issues"], 1):
-            print(f"    {i}. [{issue['module']}] {issue['check']}")
-            if issue["recommendation"]:
-                print(f"       {color('→ ' + issue['recommendation'], 'yellow')}")
+def _score_color(score):
+    if score >= 80:
+        return Fore.GREEN
+    elif score >= 60:
+        return Fore.YELLOW
+    elif score >= 40:
+        return Fore.RED
     else:
-        print(color("  ✔ الخادم في حالة أمنية ممتازة!", "green"))
-
-    print(color("═" * 55, "cyan") + "\n")
+        return Fore.RED + Style.BRIGHT
