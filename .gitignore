@@ -1,0 +1,14 @@
+# تقارير الفحص المُولَّدة تلقائياً — قد تحتوي بيانات حساسة
+siyaj_report_*.json
+siyaj_report_*.txt
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# بيئة Python الافتراضية
+venv/
+.env/
+env/
