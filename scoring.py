@@ -1,74 +1,44 @@
-WEIGHTS = {
-    "SSH":      0.40,
-    "Firewall": 0.35,
-    "Users":    0.25,
+DOMAIN_WEIGHTS = {
+    "ssh": 0.40,
+    "firewall": 0.35,
+    "users": 0.25,
 }
 
 
-def calculate_final_score(modules_results):
-    """حساب الدرجة النهائية بالأوزان المحددة"""
-    total = 0
-    for result in modules_results:
-        module_name = result["module"]
-        weight = WEIGHTS.get(module_name, 0)
-        total += result["score"] * weight
-    return round(total)
+def calculate_scores(results):
+    """Return (domain_scores dict, final_weighted_score).
+
+    domain_scores format:
+        { "ssh": {"earned": N, "max": M, "percentage": P}, ... }
+
+    Final score normalises weights to only the audited domains so partial
+    audits (e.g. --audit ssh) still produce a meaningful 0-100 number.
+    """
+    domain_scores = {}
+
+    for domain, checks in results.items():
+        earned = sum(c["score"] for c in checks)
+        maximum = sum(c["max_score"] for c in checks)
+        pct = (earned / maximum * 100) if maximum > 0 else 0.0
+        domain_scores[domain] = {"earned": earned, "max": maximum, "percentage": pct}
+
+    # Normalise weights to audited domains only
+    total_weight = sum(DOMAIN_WEIGHTS.get(d, 0) for d in domain_scores)
+    final = 0.0
+    if total_weight > 0:
+        for domain, scores in domain_scores.items():
+            w = DOMAIN_WEIGHTS.get(domain, 0)
+            final += scores["percentage"] * (w / total_weight)
+
+    return domain_scores, final
 
 
-def classify_score(score):
-    """تصنيف الدرجة النهائية"""
+def score_label(score):
     if score >= 80:
-        return "جيد", "green"
+        return "Good"
     elif score >= 60:
-        return "يحتاج تحسين", "yellow"
+        return "Needs Improvement"
     elif score >= 40:
-        return "خطر", "red"
+        return "Danger"
     else:
-        return "حرج", "red"
-
-
-def get_top_issues(modules_results, limit=5):
-    """استخراج أهم المشاكل بالأولوية"""
-    all_issues = []
-
-    severity_order = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-
-    for module_result in modules_results:
-        module_name = module_result["module"]
-        for r in module_result["results"]:
-            status = r.get("status", "")
-            if status in ("خطر", "تحذير", "مفقود"):
-                severity = r.get("severity", "medium")
-                all_issues.append({
-                    "module": module_name,
-                    "check": r.get("check") or r.get("setting") or r.get("id"),
-                    "detail": r.get("detail") or r.get("description"),
-                    "severity": severity,
-                    "recommendation": r.get("recommendation"),
-                    "_order": severity_order.get(severity, 99),
-                })
-
-    all_issues.sort(key=lambda x: x["_order"])
-    return all_issues[:limit]
-
-
-def summarize(modules_results):
-    """إنشاء ملخص شامل للنتائج"""
-    final_score = calculate_final_score(modules_results)
-    classification, color = classify_score(final_score)
-    top_issues = get_top_issues(modules_results)
-
-    return {
-        "final_score": final_score,
-        "classification": classification,
-        "color": color,
-        "modules": [
-            {
-                "name": r["module"],
-                "score": r["score"],
-                "weight": int(WEIGHTS.get(r["module"], 0) * 100),
-            }
-            for r in modules_results
-        ],
-        "top_issues": top_issues,
-    }
+        return "Critical"
