@@ -1,106 +1,115 @@
 #!/usr/bin/env python3
-"""
-SecureConfig Auditor — سياج
-أداة تدقيق أمني لخوادم Linux مبنية على معايير CIS Benchmarks
+"""Siyaj — SecureConfig Auditor v1.0
+
+Usage:
+    sudo python3 main.py --audit all
+    sudo python3 main.py --audit ssh
+    sudo python3 main.py --audit firewall
+    sudo python3 main.py --audit users
+    sudo python3 main.py --audit all --output json
+    sudo python3 main.py --audit all --output txt
 """
 
 import argparse
-import sys
+import datetime
+import json
 import os
+import sys
 
-# تأكد من أن الأداة تعمل من مجلدها
-sys.path.insert(0, os.path.dirname(__file__))
+from exporter import export_json, export_txt
+from firewall_audit import audit_firewall
+from scoring import calculate_scores
+from ssh_audit import audit_ssh
+from ui import print_banner, print_check, print_final_score, print_score, print_section
+from users_audit import audit_users
 
-import ssh_audit
-import firewall_audit
-import users_audit
-import scoring
-import ui
-import exporter
-
-
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="SecureConfig Auditor — تدقيق أمني لخوادم Linux",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser.add_argument(
-        "--audit",
-        choices=["ssh", "firewall", "users", "all"],
-        default="all",
-        help=(
-            "اختر وحدة الفحص:\n"
-            "  ssh       — فحص إعدادات SSH\n"
-            "  firewall  — فحص الجدار الناري\n"
-            "  users     — فحص حسابات المستخدمين\n"
-            "  all       — فحص شامل (افتراضي)"
-        ),
-    )
-    parser.add_argument(
-        "--output",
-        choices=["cli", "json", "txt"],
-        default="cli",
-        help=(
-            "صيغة التقرير:\n"
-            "  cli   — عرض في الطرفية (افتراضي)\n"
-            "  json  — تصدير JSON\n"
-            "  txt   — تصدير TXT"
-        ),
-    )
-    return parser.parse_args()
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+CIS_RULES_PATH = os.path.join(SCRIPT_DIR, "cis_rules.json")
 
 
-def run_modules(audit_choice):
-    """تشغيل وحدات الفحص المطلوبة"""
-    modules_map = {
-        "ssh":      ssh_audit.run,
-        "firewall": firewall_audit.run,
-        "users":    users_audit.run,
-    }
+def load_rules():
+    try:
+        with open(CIS_RULES_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"[ERROR] Rule database not found: {CIS_RULES_PATH}")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] Invalid JSON in cis_rules.json: {e}")
+        sys.exit(1)
 
-    if audit_choice == "all":
-        selected = ["ssh", "firewall", "users"]
-    else:
-        selected = [audit_choice]
 
-    results = []
-    for name in selected:
-        print(f"  جاري فحص {name}...", end="\r")
-        result = modules_map[name]()
-        results.append(result)
-        print(f"  ✔ اكتمل فحص {name}          ")
+def run_audit(audit_type, rules, output_format=None):
+    results = {}
 
-    return results
+    if audit_type in ("all", "ssh"):
+        print_section("SSH Audit  (/etc/ssh/sshd_config)")
+        results["ssh"] = audit_ssh(rules)
+        for c in results["ssh"]:
+            print_check(c["check"], c["status"], c["detail"])
+
+    if audit_type in ("all", "firewall"):
+        print_section("Firewall Audit  (UFW)")
+        results["firewall"] = audit_firewall(rules)
+        for c in results["firewall"]:
+            print_check(c["check"], c["status"], c["detail"])
+
+    if audit_type in ("all", "users"):
+        print_section("Users Audit  (/etc/passwd  /etc/shadow  sudoers)")
+        results["users"] = audit_users(rules)
+        for c in results["users"]:
+            print_check(c["check"], c["status"], c["detail"])
+
+    domain_scores, final_score = calculate_scores(results)
+
+    print_section("Score Summary")
+    for domain, s in domain_scores.items():
+        print_score(domain.upper(), s["earned"], s["max"])
+
+    print_final_score(final_score)
+
+    if output_format:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_path = os.path.join(SCRIPT_DIR, f"siyaj_report_{ts}.{output_format}")
+        if output_format == "json":
+            export_json(results, domain_scores, final_score, report_path)
+        else:
+            export_txt(results, domain_scores, final_score, report_path)
+
+    return final_score
 
 
 def main():
-    args = parse_args()
-
-    ui.print_header()
-
-    # تحقق من صلاحية Root
     if os.geteuid() != 0:
-        print("  ⚠ تحذير: يُفضل تشغيل الأداة بـ sudo للحصول على نتائج كاملة\n")
+        print("[ERROR] This tool must be run as root: sudo python3 main.py")
+        sys.exit(1)
 
-    print("  بدء الفحص...\n")
-    modules_results = run_modules(args.audit)
+    parser = argparse.ArgumentParser(
+        prog="siyaj",
+        description="Siyaj — SecureConfig Auditor v1.0  |  سياج",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=__doc__,
+    )
+    parser.add_argument(
+        "--audit",
+        choices=["all", "ssh", "firewall", "users"],
+        required=True,
+        metavar="DOMAIN",
+        help="Audit domain: all | ssh | firewall | users",
+    )
+    parser.add_argument(
+        "--output",
+        choices=["json", "txt"],
+        metavar="FORMAT",
+        help="Export report format: json | txt",
+    )
 
-    summary = scoring.summarize(modules_results)
+    args = parser.parse_args()
 
-    if args.output == "cli":
-        for result in modules_results:
-            ui.print_module_results(result)
-        ui.print_summary(summary)
-
-    elif args.output == "json":
-        path = exporter.export_json(modules_results, summary)
-        ui.print_summary(summary)
-        print(f"  📄 تم حفظ التقرير: {path}\n")
-
-    elif args.output == "txt":
-        path = exporter.export_txt(modules_results, summary)
-        ui.print_summary(summary)
-        print(f"  📄 تم حفظ التقرير: {path}\n")
+    print_banner()
+    rules = load_rules()
+    score = run_audit(args.audit, rules, args.output)
+    sys.exit(0 if score >= 60 else 1)
 
 
 if __name__ == "__main__":
