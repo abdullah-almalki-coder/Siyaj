@@ -1,76 +1,56 @@
 import json
-import os
-from datetime import datetime
+import datetime
+
+from scoring import score_label
 
 
-def _get_output_path(fmt):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"siyaj_report_{timestamp}.{fmt}"
-    return filename
-
-
-def export_json(modules_results, summary):
-    """تصدير التقرير بصيغة JSON"""
-    report = {
-        "tool": "SecureConfig Auditor — سياج",
-        "generated_at": datetime.now().isoformat(),
-        "summary": summary,
-        "modules": modules_results,
+def export_json(results, domain_scores, final_score, filepath):
+    data = {
+        "tool": "Siyaj — SecureConfig Auditor v1.0",
+        "timestamp": datetime.datetime.now().isoformat(),
+        "final_score": round(final_score, 2),
+        "score_label": score_label(final_score),
+        "domain_scores": domain_scores,
+        "results": results,
     }
-    path = _get_output_path("json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(report, f, ensure_ascii=False, indent=2)
-    return path
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        print(f"[+] JSON report saved: {filepath}")
+    except OSError as e:
+        print(f"[ERROR] Could not write JSON report: {e}")
 
 
-def export_txt(modules_results, summary):
-    """تصدير التقرير بصيغة TXT"""
-    lines = []
-    sep = "═" * 55
+def export_txt(results, domain_scores, final_score, filepath):
+    label = score_label(final_score)
+    ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = [
+        "=" * 60,
+        "  Siyaj — SecureConfig Auditor v1.0",
+        f"  Generated: {ts}",
+        "=" * 60,
+        "",
+        f"FINAL SCORE: {final_score:.1f}/100  —  {label}",
+        "",
+        "DOMAIN SCORES:",
+    ]
 
-    lines.append(sep)
-    lines.append("SecureConfig Auditor — نظام تدقيق أمني Linux")
-    lines.append(f"تاريخ الفحص: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    lines.append(sep)
+    for domain, s in domain_scores.items():
+        lines.append(f"  {domain.upper()}: {s['earned']}/{s['max']} ({s['percentage']:.1f}%)")
+
     lines.append("")
 
-    score = summary["final_score"]
-    classification = summary["classification"]
-    lines.append(f"النتيجة النهائية: {score}/100 — {classification}")
-    lines.append("")
-
-    lines.append("الأوزان:")
-    for m in summary["modules"]:
-        lines.append(f"  {m['name']:10} {m['score']:3}/100  ({m['weight']}%)")
-    lines.append("")
-
-    if summary["top_issues"]:
-        lines.append("أهم المشاكل:")
-        for i, issue in enumerate(summary["top_issues"], 1):
-            lines.append(f"  {i}. [{issue['module']}] {issue['check']}")
-            if issue["recommendation"]:
-                lines.append(f"     → {issue['recommendation']}")
+    for domain, checks in results.items():
+        lines.append("=" * 60)
+        lines.append(f"  {domain.upper()} AUDIT")
+        lines.append("-" * 60)
+        for c in checks:
+            lines.append(f"  [{c['status']}] {c['check']}: {c['detail']}")
         lines.append("")
 
-    for module_result in modules_results:
-        lines.append(sep)
-        lines.append(f"وحدة {module_result['module']} — {module_result['score']}/100")
-        lines.append("")
-        for r in module_result["results"]:
-            status = r.get("status", "")
-            check = r.get("check") or r.get("setting") or ""
-            detail = r.get("detail") or r.get("description") or ""
-            recommendation = r.get("recommendation")
-            lines.append(f"  [{status}] {check}")
-            if detail:
-                lines.append(f"       {detail}")
-            if recommendation:
-                lines.append(f"       → {recommendation}")
-            lines.append("")
-
-    lines.append(sep)
-
-    path = _get_output_path("txt")
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
-    return path
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        print(f"[+] TXT report saved:  {filepath}")
+    except OSError as e:
+        print(f"[ERROR] Could not write TXT report: {e}")
