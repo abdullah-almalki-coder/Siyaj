@@ -1,99 +1,99 @@
-import json
+import glob
 import os
 
+
 SSHD_CONFIG = "/etc/ssh/sshd_config"
-CIS_RULES = os.path.join(os.path.dirname(__file__), "cis_rules.json")
 
 
-def load_ssh_config():
-    """قراءة ملف إعدادات SSH"""
+def audit_ssh(rules):
+    ssh_rules = rules.get("ssh", {})
+
+    if not os.path.exists(SSHD_CONFIG):
+        return [{
+            "check": "sshd_config",
+            "description": "SSH daemon configuration file",
+            "status": "FAIL",
+            "detail": f"{SSHD_CONFIG} not found",
+            "score": 0,
+            "max_score": sum(r["weight"] for r in ssh_rules.values()),
+        }]
+
+    config = _parse_sshd_config(SSHD_CONFIG)
+    results = []
+
+    for key, rule in ssh_rules.items():
+        expected = rule["expected"]
+        weight = rule["weight"]
+        description = rule["description"]
+        comparator = rule.get("comparator", "eq")
+
+        actual = config.get(key.lower())
+
+        if actual is None:
+            # Protocol was removed in OpenSSH 7.0 — absence means SSH2-only (safe by default)
+            if key == "Protocol":
+                status = "PASS"
+                detail = "Not in config (SSH2 enforced by default)"
+                earned = weight
+            else:
+                status = "WARN"
+                detail = f"Not set in config (expected: {expected})"
+                earned = 0
+        else:
+            passed = _compare(actual, expected, comparator)
+            if passed:
+                status = "PASS"
+                detail = actual
+                earned = weight
+            else:
+                status = "FAIL"
+                detail = f"{actual} (expected: {expected})"
+                earned = 0
+
+        results.append({
+            "check": key,
+            "description": description,
+            "status": status,
+            "detail": detail,
+            "score": earned,
+            "max_score": weight,
+        })
+
+    return results
+
+
+def _compare(actual, expected, comparator):
+    if comparator == "lte":
+        try:
+            return int(actual) <= int(expected)
+        except ValueError:
+            return False
+    return actual.lower() == expected.lower()
+
+
+def _parse_sshd_config(path):
     config = {}
-    try:
-        with open(SSHD_CONFIG, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    parts = line.split(None, 1)
-                    if len(parts) == 2:
-                        config[parts[0]] = parts[1]
-    except FileNotFoundError:
-        print(f"[!] ملف {SSHD_CONFIG} غير موجود")
-    except PermissionError:
-        print(f"[!] لا توجد صلاحية لقراءة {SSHD_CONFIG} — شغّل الأداة بـ sudo")
+    _read_config_file(path, config)
     return config
 
 
-def evaluate_setting(rule, config):
-    """تقييم إعداد واحد مقارنةً بالقاعدة"""
-    setting = rule["setting"]
-    expected = rule["expected"]
-    operator = rule.get("operator", "eq")
-
-    if setting not in config:
-        return {
-            "id": rule["id"],
-            "setting": setting,
-            "status": "مفقود",
-            "current": None,
-            "expected": expected,
-            "severity": rule["severity"],
-            "description": rule["description"],
-            "recommendation": rule["recommendation"],
-        }
-
-    current = config[setting].strip().lower()
-    expected_lower = expected.lower()
-
-    if operator == "eq":
-        passed = current == expected_lower
-    elif operator == "lte":
-        try:
-            passed = int(current) <= int(expected)
-        except ValueError:
-            passed = False
-    else:
-        passed = current == expected_lower
-
-    return {
-        "id": rule["id"],
-        "setting": setting,
-        "status": "آمن" if passed else "خطر",
-        "current": config[setting],
-        "expected": expected,
-        "severity": rule["severity"],
-        "description": rule["description"],
-        "recommendation": rule["recommendation"] if not passed else None,
-    }
-
-
-def calculate_score(results):
-    """حساب درجة SSH من 100"""
-    if not results:
-        return 0
-
-    weights = {"critical": 3, "high": 2, "medium": 1, "low": 0.5}
-    total_weight = sum(weights.get(r["severity"], 1) for r in results)
-    earned_weight = sum(
-        weights.get(r["severity"], 1)
-        for r in results
-        if r["status"] == "آمن"
-    )
-
-    return round((earned_weight / total_weight) * 100) if total_weight else 0
-
-
-def run():
-    """تشغيل فحص SSH الكامل"""
-    with open(CIS_RULES) as f:
-        rules = json.load(f)["ssh"]
-
-    config = load_ssh_config()
-    results = [evaluate_setting(rule, config) for rule in rules]
-    score = calculate_score(results)
-
-    return {
-        "module": "SSH",
-        "score": score,
-        "results": results,
-        "config_path": SSHD_CONFIG,
-    }
+def _read_config_file(path, config):
+    """Read one sshd_config file, follow Include directives, first-value-wins."""
+    try:
+        with open(path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.lower().startswith("include "):
+                    pattern = line.split(None, 1)[1].strip()
+                    for included in sorted(glob.glob(pattern)):
+                        _read_config_file(included, config)
+                    continue
+                parts = line.split(None, 1)
+                if len(parts) == 2:
+                    key = parts[0].lower()
+                    if key not in config:  # sshd uses first occurrence
+                        config[key] = parts[1].strip()
+    except OSError:
+        pass
