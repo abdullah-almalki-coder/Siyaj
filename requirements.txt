@@ -1,0 +1,4 @@
+# Siyaj — SecureConfig Auditor v1.0
+# تثبيت المكتبات: pip install -r requirements.txt
+
+colorama>=0.4.6   # الألوان في الطرفية (أحمر/أخضر/أصفر)
