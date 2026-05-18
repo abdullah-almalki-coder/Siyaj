@@ -3,6 +3,10 @@
 أداة تدقيق أمني لخوادم Linux مبنية بـ Python، تفحص إعدادات SSH والجدار الناري والمستخدمين وفق معايير CIS Benchmarks وتُصدر تقريراً مُرقَّماً.
 
 ---
+## Demo
+
+![Siyaj Demo](demo.png)<img width="541" height="631" alt="demo png" src="https://github.com/user-attachments/assets/aaa6238a-3a73-4c58-9fc2-851d110f9d5a" />
+
 
 ## المميزات
 
