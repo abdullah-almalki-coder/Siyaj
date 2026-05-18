@@ -5,7 +5,8 @@
 ---
 ## Demo
 
-![Siyaj Demo](demo.png)<img width="541" height="631" alt="demo png" src="https://github.com/user-attachments/assets/aaa6238a-3a73-4c58-9fc2-851d110f9d5a" />
+![Siyaj Demo](demo.png)
+<img width="541" height="631" alt="demo png" src="https://github.com/user-attachments/assets/aaa6238a-3a73-4c58-9fc2-851d110f9d5a" />
 
 
 ## المميزات
