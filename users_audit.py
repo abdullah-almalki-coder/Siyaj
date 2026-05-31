@@ -7,27 +7,39 @@ def audit_users(rules):
     u_rules = rules.get("users", {})
     results = []
 
-    # Root locked
+    # Root locked — None means we could not determine it
     weight = u_rules.get("root_locked", {}).get("weight", 10)
     locked = _root_locked()
+    if locked is None:
+        status, detail, earned = "WARN", "Cannot determine root lock state", 0
+    elif locked:
+        status, detail, earned = "PASS", "locked", weight
+    else:
+        status, detail, earned = "FAIL", "NOT locked", 0
     results.append({
         "check": "root_locked",
         "description": u_rules.get("root_locked", {}).get("description", ""),
-        "status": "PASS" if locked else "FAIL",
-        "detail": "locked" if locked else "NOT locked",
-        "score": weight if locked else 0,
+        "status": status,
+        "detail": detail,
+        "score": earned,
         "max_score": weight,
     })
 
-    # No UID=0 non-root accounts
+    # No UID=0 non-root accounts — None means the account database was unreadable
     weight = u_rules.get("no_uid0_non_root", {}).get("weight", 8)
     uid0 = _uid0_non_root()
+    if uid0 is None:
+        status, detail, earned = "WARN", "Cannot read account database", 0
+    elif not uid0:
+        status, detail, earned = "PASS", "None found", weight
+    else:
+        status, detail, earned = "FAIL", f"Found: {', '.join(uid0)}", 0
     results.append({
         "check": "no_uid0_non_root",
         "description": u_rules.get("no_uid0_non_root", {}).get("description", ""),
-        "status": "PASS" if not uid0 else "FAIL",
-        "detail": "None found" if not uid0 else f"Found: {', '.join(uid0)}",
-        "score": weight if not uid0 else 0,
+        "status": status,
+        "detail": detail,
+        "score": earned,
         "max_score": weight,
     })
 
@@ -71,19 +83,27 @@ def audit_users(rules):
 
 
 def _run(cmd):
+    # LC_ALL=C keeps the `passwd -S` status flags (L/LK/P) in their stable
+    # English form regardless of the server's locale.
     try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        env = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                           timeout=10, env=env)
         return r.stdout.strip()
     except Exception:
         return ""
 
 
 def _root_locked():
+    """True if root password is locked, False if usable, None if undetermined."""
     out = _run("passwd -S root")
     if out:
         parts = out.split()
-        if len(parts) >= 2 and parts[1] in ("L", "LK"):
-            return True
+        if len(parts) >= 2:
+            if parts[1] in ("L", "LK"):
+                return True
+            if parts[1] in ("P", "PS", "NP"):
+                return False
 
     try:
         with open("/etc/shadow", "r") as f:
@@ -94,14 +114,15 @@ def _root_locked():
     except OSError:
         pass
 
-    return False
+    return None
 
 
 def _uid0_non_root():
+    """List of non-root UID=0 accounts, or None if the database is unreadable."""
     try:
         return [e.pw_name for e in pwd.getpwall() if e.pw_uid == 0 and e.pw_name != "root"]
     except Exception:
-        return []
+        return None
 
 
 def _empty_passwords():
