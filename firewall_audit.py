@@ -1,3 +1,4 @@
+import os
 import re
 import subprocess
 
@@ -54,8 +55,12 @@ def audit_firewall(rules):
 
 
 def _run(cmd):
+    # LC_ALL=C forces English output so matches like "Status: active" and
+    # "deny (incoming)" are stable regardless of the server's locale.
     try:
-        r = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=10)
+        env = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+        r = subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                           timeout=10, env=env)
         return r.stdout + r.stderr
     except Exception:
         return ""
