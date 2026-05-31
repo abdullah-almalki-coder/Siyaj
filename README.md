@@ -3,11 +3,6 @@
 أداة تدقيق أمني لخوادم Linux مبنية بـ Python، تفحص إعدادات SSH والجدار الناري والمستخدمين وفق معايير CIS Benchmarks وتُصدر تقريراً مُرقَّماً.
 
 ---
-## Demo
-
-![Siyaj Demo](demo.png)
-<img width="541" height="631" alt="demo png" src="https://github.com/user-attachments/assets/aaa6238a-3a73-4c58-9fc2-851d110f9d5a" />
-
 
 ## المميزات
 
@@ -15,6 +10,9 @@
 - **Rule-based** — all rules are defined in `cis_rules.json`, separate from the code
 - **Modular** — each audit domain is an independent Python module
 - **Weighted scoring** — SSH 40% · Firewall 35% · Users 25%
+- **Effective-config aware** — SSH is audited via `sshd -T`, so OpenSSH's real defaults are evaluated (an unset directive is judged by its actual default, not assumed insecure)
+- **Locale-independent** — all system commands run under `LC_ALL=C` so output parsing is stable on any locale
+- **No false PASS / no false FAIL** — "could not read" is reported as `WARN`, and a missing `sshd_config` (SSH not installed) is treated as *not applicable*, not a failure
 - **Report export** — JSON or TXT
 
 ---
@@ -105,6 +103,8 @@ siyaj/
 | IgnoreRhosts | yes | 5 |
 | HostbasedAuthentication | no | 5 |
 | PermitEmptyPasswords | no | 5 |
+
+> The SSH audit reads the **effective** configuration via `sshd -T` (which includes compiled-in defaults). If `sshd -T` is unavailable, it parses `/etc/ssh/sshd_config` (following `Include`, first-value-wins) and judges any *unset* directive by its real OpenSSH default. If no SSH config exists at all (SSH not installed), the domain is reported as **WARN / not applicable** rather than a failure.
 
 ---
 
